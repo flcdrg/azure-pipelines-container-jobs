@@ -36,8 +36,8 @@ jobs:
       inputs:
         filePath: "scripts/Test-ChangesMadeInPath.ps1"
         arguments: >-
-          -authorisation "Bearer $(system.accesstoken)" 
-          -pathFilter "build/containers" 
+          -authorisation "Bearer $(system.accesstoken)"
+          -pathFilter "build/containers"
           -buildId $(Build.BuildId)
           -collectionUri "$(System.CollectionUri)"
           -project "$(System.TeamProject)"
@@ -97,6 +97,8 @@ jobs:
     container:
       image: $(ContainerName)
       endpoint: 'GitHub Packages'
+      # volumes:
+      #   - $(Agent.TempDirectory):/var/lib/mysql
 
     variables:
       Configuration: Release
@@ -110,15 +112,49 @@ jobs:
           releaseType: stable
 
       - script: |
+          printenv
           dotnet --info
           docker info
-        displayName: Info
+          mkdir $(Agent.TempDirectory)/stuff
+          # Ensure full access
+          chmod 777 $(Agent.TempDirectory)/stuff
+          ls -al $(Agent.TempDirectory)
+          touch $(Agent.TempDirectory)/stuff/host
+
+          echo "Agent.TempDirectory: $(Agent.TempDirectory)"
+
+          # Set a variable in host step, to see if we can see it on the container steps
+          echo "##vso[task.setvariable variable=myVar;isreadonly=true]$(Agent.TempDirectory)"
+          echo "##vso[task.setvariable variable=myVar2;isreadonly=true]A$(Agent.TempDirectory)B"
+
+          ENCODED_TEMP=$(echo -n "$(Agent.TempDirectory)" | base64)
+          echo "##vso[task.setvariable variable=EncodedTemp;isreadonly=true]$ENCODED_TEMP"
+        displayName: Info (host)
+        failOnStderr: true
+        target: host
 
       - script: |
           printenv
           dotnet --info
           docker info
-        displayName: Info for host
+
+          echo "myVar: $(myVar)"
+          echo "Agent.TempDirectory: $(Agent.TempDirectory)"
+
+          DECODED_TEMP=$(echo '$(EncodedTemp)' | base64 -d)
+
+          echo "DECODED_TEMP: $DECODED_TEMP"
+
+          ls -al $(Agent.TempDirectory)
+          touch $(Agent.TempDirectory)/container
+          touch $(Agent.TempDirectory)/stuff/container
+          ls -al $(Agent.TempDirectory)/stuff
+        displayName: Info
+        failOnStderr: true
+
+      - script: |
+          ls -al $(Agent.TempDirectory)/stuff
+        displayName: List directory (host)
         target: host
 
       - task: DotNetCoreCLI@2
@@ -126,4 +162,3 @@ jobs:
         inputs:
           command: 'build'
           workingDirectory: src
-        
